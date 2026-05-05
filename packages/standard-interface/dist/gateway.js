@@ -4,7 +4,7 @@ import compression from "compression";
 import { createServer } from "node:http";
 import { createLogger } from "@stem-agent/shared";
 import { AuthMiddleware, ApiKeyProvider, JwtProvider } from "./auth/index.js";
-import { requestIdMiddleware, loggingMiddleware, RateLimiter, errorHandler, } from "./middleware/index.js";
+import { requestIdMiddleware, loggingMiddleware, RateLimiter, errorHandler, securityHeadersMiddleware, auditLogMiddleware, } from "./middleware/index.js";
 import { A2AHandler, agentCardRouter } from "./a2a/index.js";
 import { A2UIHandler } from "./a2ui/index.js";
 import { AGUIHandler } from "./ag-ui/index.js";
@@ -13,6 +13,7 @@ import { UcpHandler } from "./ucp/index.js";
 import { restRouter } from "./rest/index.js";
 import { buildOpenApiSpec } from "./rest/openapi-spec.js";
 import { WsHandler } from "./websocket/index.js";
+import { initMetrics } from "./observability/index.js";
 /**
  * Unified Gateway that routes requests to the appropriate protocol handler.
  * Mounts A2A, REST, WebSocket endpoints with shared auth and middleware.
@@ -78,12 +79,26 @@ export class Gateway {
     setupMiddleware() {
         // Body parsing
         this.app.use(express.json());
-        // Request ID
+        // Request ID — early so downstream logs + audit events can reference it
         this.app.use(requestIdMiddleware);
+        // Security headers (opt-in via config or SECURITY_HELMET=true)
+        const securityHeadersEnabled = this.config.securityHeaders === true ||
+            (typeof this.config.securityHeaders === "object" && this.config.securityHeaders !== null) ||
+            process.env["SECURITY_HELMET"] === "true";
+        if (securityHeadersEnabled) {
+            const cfg = typeof this.config.securityHeaders === "object" && this.config.securityHeaders !== null
+                ? this.config.securityHeaders
+                : {};
+            this.app.use(securityHeadersMiddleware(cfg));
+        }
         // Logging
         this.app.use(loggingMiddleware(this.logger));
-        // CORS
-        this.app.use(cors({ origin: this.config.corsOrigin ?? "*" }));
+        // CORS — warn loudly if left wide-open so the risk is visible in logs
+        const corsOrigin = this.config.corsOrigin ?? "*";
+        if (corsOrigin === "*") {
+            this.logger.warn("CORS origin is '*' — any browser can reach this API. Set config.corsOrigin for production.");
+        }
+        this.app.use(cors({ origin: corsOrigin }));
         // Compression
         this.app.use(compression());
         // Auth
@@ -96,6 +111,7 @@ export class Gateway {
                     "/api/v1/health",
                     "/docs",
                     "/api-docs",
+                    "/metrics",
                     ...(this.config.auth.publicPaths ?? []),
                 ],
             });
@@ -107,10 +123,36 @@ export class Gateway {
             }
             this.app.use(authMiddleware.handler);
         }
+        // Audit log (opt-in via config or AUDIT_LOG_ENABLED=true). Mounted after
+        // auth so req.principal is available when the event fires.
+        const auditEnabled = this.config.auditLog === true ||
+            (typeof this.config.auditLog === "object" && this.config.auditLog !== null) ||
+            process.env["AUDIT_LOG_ENABLED"] === "true";
+        if (auditEnabled) {
+            this.app.use(auditLogMiddleware({
+                enabled: true,
+                parentLogger: this.logger,
+                ...(typeof this.config.auditLog === "object" && this.config.auditLog !== null
+                    ? this.config.auditLog
+                    : {}),
+            }));
+        }
         // Rate limiting
         if (this.config.rateLimit) {
             const limiter = new RateLimiter(this.config.rateLimit);
             this.app.use(limiter.handler);
+        }
+        // Prometheus metrics (opt-in via config or METRICS_ENABLED=true)
+        const metricsEnabled = this.config.metrics === true ||
+            (typeof this.config.metrics === "object" && this.config.metrics !== null) ||
+            process.env["METRICS_ENABLED"] === "true";
+        if (metricsEnabled) {
+            initMetrics(this.app, {
+                enabled: true,
+                ...(typeof this.config.metrics === "object" && this.config.metrics !== null
+                    ? this.config.metrics
+                    : {}),
+            });
         }
     }
     setupRoutes() {

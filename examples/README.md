@@ -42,6 +42,7 @@ python 02_cell_differentiation.py
 | 05 | `05_skill_lifecycle.py` | Adaptive DevOps Runbook Learning | Crystallization, maturation, apoptosis simulation |
 | 06 | `06_cell_differentiation.ipynb` | Clinical Trial Safety Analysis | Medical personas, safety constraints, regulatory writing |
 | 07 | `07_multi_agent_research.ipynb` | AI Governance Research (Full Protocol) | REST, A2A, Async Tasks, SSE Streaming, Profiles |
+| 08 | `08_enterprise_operations.py` | Enterprise Operations Smoke Test | Auth (X-API-Key), request correlation, RBAC probe, /metrics scrape |
 
 ## Feature Coverage Matrix
 
@@ -108,6 +109,12 @@ specialist) and regulatory compliance writing.
 End-to-end research pipeline demonstrating **every major STEM Agent protocol**:
 REST, A2A JSON-RPC 2.0, async tasks, SSE streaming, caller profiles, and
 behavior inspection — all in a single AI governance policy workflow.
+
+### 08 — Enterprise Operations Smoke Test
+Run the four checks you'd make after enabling hardening in a new environment:
+an authenticated request with `X-API-Key`, request-id correlation for log/SIEM
+pivots, a probe of an RBAC-gated endpoint, and a `/metrics` scrape. Pairs
+with `docs/security.md`, `docs/observability.md`, and `docs/deployment.md`.
 
 ## The Cell Differentiation Analogy
 

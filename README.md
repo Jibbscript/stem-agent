@@ -115,6 +115,32 @@ docker compose --profile dev up -d
 docker compose --profile prod up -d
 ```
 
+## Enterprise operations
+
+Hardening controls ship opt-in so the quickstart stays simple. Enable as
+your deployment matures:
+
+| Concern | Control | Enable |
+|---------|---------|--------|
+| Production deploy | [Dockerfile](./Dockerfile), [deploy/k8s/](./deploy/k8s/), [docs/deployment.md](./docs/deployment.md) | container image + manifests |
+| Security headers | `securityHeadersMiddleware` | `SECURITY_HELMET=true` |
+| Audit log | `auditLogMiddleware` (SIEM-ready JSON events) | `AUDIT_LOG_ENABLED=true` |
+| RBAC | `requirePermission(perm)` middleware | per-route wiring |
+| PII redaction | pino `redact` defaults | on by default; `LOG_REDACT=off` to disable |
+| Metrics | `/metrics` Prometheus exposition | `METRICS_ENABLED=true` |
+
+Full guides: [security](./docs/security.md) · [observability](./docs/observability.md) · [deployment](./docs/deployment.md).
+
+Industry-aligned personas live under [`domains/`](./domains/) — `sre`,
+`finance`, `ai-research`, `healthcare`, and `legal` each ship persona config
+and starter skills.
+
+Try the enterprise-ops smoke test:
+
+```bash
+STEM_API_KEY=... python examples/08_enterprise_operations.py
+```
+
 ## Development
 
 ```bash

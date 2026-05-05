@@ -1,0 +1,83 @@
+# Example Kubernetes Deployment for STEM Agent.
+# Adapt namespace, image registry, resources, and probe paths to your cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stem-agent
+  labels:
+    app.kubernetes.io/name: stem-agent
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 2
+  # The in-memory rate limiter is per-pod — see docs/deployment.md §Scaling.
+  # Until a Redis-backed limiter lands, either keep replicas=1 or accept that
+  # rate limits are enforced per-pod (sticky sessions recommended).
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stem-agent
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stem-agent
+      annotations:
+        # Wire Prometheus scraping when METRICS_ENABLED=true (see ConfigMap).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: stem-agent
+          image: ghcr.io/your-org/stem-agent:0.1.1  # replace with your image
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: stem-agent-config
+            - secretRef:
+                name: stem-agent-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30

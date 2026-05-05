@@ -2,7 +2,8 @@ import express from "express";
 import { type Server as HttpServer } from "node:http";
 import { type IStemAgent, type IMCPManager, type IMemoryManager } from "@stem-agent/shared";
 import { type AuthConfig } from "./auth/index.js";
-import { type RateLimitConfig } from "./middleware/index.js";
+import { type RateLimitConfig, type SecurityHeadersConfig, type AuditLogConfig } from "./middleware/index.js";
+import { type MetricsConfig } from "./observability/index.js";
 /**
  * Configuration for the Gateway.
  */
@@ -23,6 +24,22 @@ export interface GatewayConfig {
     mcpManager?: IMCPManager;
     /** Optional memory manager for profile routes. */
     memoryManager?: IMemoryManager;
+    /**
+     * Opt-in security headers. When provided (or when SECURITY_HELMET=true),
+     * attaches a hand-rolled helmet-style header middleware. Default: disabled.
+     */
+    securityHeaders?: SecurityHeadersConfig | boolean;
+    /**
+     * Opt-in audit log. When enabled (config or AUDIT_LOG_ENABLED=true), emits
+     * one structured event per request via a dedicated pino child logger.
+     */
+    auditLog?: Partial<AuditLogConfig> | boolean;
+    /**
+     * Opt-in Prometheus metrics. When enabled (config or METRICS_ENABLED=true),
+     * records HTTP request counters + duration histogram and exposes them at
+     * `/metrics` in the Prometheus text format.
+     */
+    metrics?: Partial<MetricsConfig> | boolean;
 }
 /**
  * Unified Gateway that routes requests to the appropriate protocol handler.

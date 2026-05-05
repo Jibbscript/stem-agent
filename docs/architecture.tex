@@ -1,0 +1,58 @@
+% STEM Agent Architecture — presentation-quality diagram wrapper
+% Render: tectonic architecture.tex
+\documentclass[11pt]{article}
+
+\usepackage[
+  paperwidth=420mm,
+  paperheight=540mm,
+  margin=18mm,
+  top=22mm,
+  bottom=18mm
+]{geometry}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{helvet}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\renewcommand{\familydefault}{\sfdefault}
+
+\definecolor{titleBlue}{HTML}{1E3A8A}
+\definecolor{accent}{HTML}{3B82F6}
+\definecolor{subtleGray}{HTML}{64748B}
+\definecolor{rulegray}{HTML}{CBD5E1}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyfoot[L]{\color{subtleGray}\footnotesize STEM Agent \textbullet\ Architecture Blueprint}
+\fancyfoot[C]{\color{subtleGray}\footnotesize \today}
+\fancyfoot[R]{\color{subtleGray}\footnotesize \thepage}
+
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+% ---------- Title block ----------
+\begin{center}
+  {\fontsize{28}{34}\selectfont\color{titleBlue}\textbf{STEM Agent --- System Architecture}}\\[4pt]
+  {\color{accent}\rule{0.55\textwidth}{1.2pt}}\\[6pt]
+  {\fontsize{13}{16}\selectfont\color{subtleGray}%
+    Self-learning, Tool-using, Enterprise-Managed agent reference architecture}\\[3pt]
+  {\fontsize{11}{14}\selectfont\color{subtleGray}%
+    Gateway \textbullet\ Core Engines \textbullet\ Memory + ATLAS \textbullet\ MCP Integration \textbullet\ Protocols \textbullet\ Enterprise Ops}
+\end{center}
+
+\vspace{6pt}
+{\color{rulegray}\hrule height 0.4pt}
+\vspace{10pt}
+
+% ---------- Diagram (full available width, native aspect ratio preserved) ----------
+\begin{center}
+  \includegraphics[width=\textwidth,keepaspectratio]{architecture_figure_v15.pdf}
+\end{center}
+
+\end{document}

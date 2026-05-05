@@ -11,6 +11,246 @@ workspaces (`stem-agent` root, `@stem-agent/shared`, `@stem-agent/agent-core`,
 
 ---
 
+## [0.1.2] — 2026-05-05
+
+Enterprise readiness release. Ships **industry personas**, **deployment
+artifacts**, **security hardening**, and **observability** — all four
+slices landed as illustrative, opt-in additions. Default runtime behavior
+is unchanged: every new control is gated by an env var or config flag, and
+the existing 0.1.1 test matrix continues to pass without modification.
+
+### Added
+
+#### Industry personas (Slice 1)
+
+- **`domains/healthcare/`** — HIPAA-aware clinical decision support.
+  - `persona.json`: forbids `direct patient diagnosis`, `PHI disclosure
+    without authorization`, `unapproved off-label advice`. Required MCP
+    servers: `fhir-mcp`, `pubmed-mcp`, `rxnorm-mcp`. Tool allowlist scoped
+    to literature, drug interactions, and PHI-handling tools.
+  - `skills.ts`: three committed skills — `phi_redaction_precheck` (runs
+    before any external call), `literature_lookup`, `drug_interaction_check`.
+- **`domains/legal/`** — Contract and compliance reviewer.
+  - `persona.json`: forbids `issuing legal advice`,
+    `privileged-communication disclosure`, cross-jurisdiction conclusions.
+    MCP: `doc-store-mcp`, `case-law-mcp`.
+  - `skills.ts`: `clause_extraction`, `risk_flagging`, `obligation_summary`.
+- **`domains/ai-research/skills.ts`** — Filled the empty placeholder with
+  three research skills: `paper_search_synthesis`, `benchmark_comparison`,
+  `replication_assessment` (mirrors the finance / sre shape).
+
+#### Deployment artifacts (Slice 2)
+
+- **`Dockerfile`** (repo root) — multi-stage build.
+  - Builder: installs full deps, runs `npm run build`, then
+    `npm prune --omit=dev`.
+  - Runtime: `node:22-slim`, non-root `node` user, `tini` as PID-1,
+    `curl` for the `HEALTHCHECK` against `GET /api/v1/health`.
+  - Fixes the pre-existing bug in `docker-compose.yml` where the `prod`
+    profile referenced a Dockerfile that did not exist in the repo.
+- **`.dockerignore`** — excludes `node_modules`, `dist`, `.env*`, docs,
+  examples, and deploy manifests from the build context.
+- **`docker-compose.prod.yml`** — production overlay demonstrating
+  externalized `DATABASE_URL` / `REDIS_URL`, opt-in hardening envs, and
+  resource limits. Standalone file (no `!reset` tags) for Compose v2
+  portability.
+- **`deploy/k8s/`** — illustrative Kubernetes manifests with
+  `# example — adapt to your cluster` banners.
+  - `deployment.yaml` — 2 replicas, resource requests/limits, readiness +
+    liveness probes on `/api/v1/health`, non-root `securityContext`,
+    `readOnlyRootFilesystem`.
+  - `service.yaml`, `configmap.yaml`, `secret.example.yaml`, `hpa.yaml`
+    (CPU-based HPA), plus a short `README.md` for the directory.
+  - `prometheus.io/scrape` annotations wired so `/metrics` is discoverable
+    once `METRICS_ENABLED=true`.
+- **`docs/deployment.md`** — topology choices, build/push, `kubectl apply`
+  flow, secrets management pointers (AWS Secrets Manager / Vault),
+  `.env` tiering, and explicit **scaling caveats** (the rate limiter and
+  AP2 mandate store are in-memory — documented as follow-ups for Redis
+  backing).
+
+#### Security hardening — all opt-in, default off (Slice 3)
+
+- **`packages/standard-interface/src/auth/authorize.ts`** — RBAC middleware
+  factories.
+  - `requirePermission(perm)` — 401 when no principal, 403 when the
+    principal lacks the permission, `next()` otherwise. Denials flow
+    through the existing `errorHandler`.
+  - `requireAnyPermission(...perms)` — same, short-circuits on any match.
+  - Consumes `Principal.permissions` already defined in
+    `shared/src/types/security.ts`.
+- **`packages/standard-interface/src/middleware/security-headers.ts`** —
+  hand-rolled security headers (no new dependency). Sets
+  `Content-Security-Policy` (default: `default-src 'none';
+  frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, and
+  `Strict-Transport-Security`. Removes `X-Powered-By`. Overrideable for
+  browser-facing deployments. Gated by `SECURITY_HELMET=true`.
+- **`packages/standard-interface/src/middleware/audit-log.ts`** — SIEM-ready
+  audit stream.
+  - Emits one structured event per request at `res.finish` via a pino
+    child logger (`name: "audit"`).
+  - Schema: `{ts, requestId, principal, action, resource, decision,
+    status, latencyMs, ip}`. `decision = "deny"` for 401/403, `"allow"`
+    otherwise.
+  - Zero-overhead pass-through when disabled. Gated by
+    `AUDIT_LOG_ENABLED=true`.
+- **`shared/src/logger.ts`** — PII redaction by default.
+  - New `DEFAULT_REDACT_PATHS` covers `authorization`, `cookie`,
+    `x-api-key`, `password`, `apiKey`, `token`, `secret`, `ssn` (plus
+    nested `req.headers.*` variants).
+  - `resolveRedactPaths()` reads `LOG_REDACT`: unset → defaults,
+    `off`/`false`/`0` → disabled, CSV → custom override.
+  - Enabled by default; existing `createLogger` signature unchanged.
+- **`packages/standard-interface/src/gateway.ts`** — opt-in middleware wired
+  into the request chain:
+  - `securityHeadersMiddleware` mounted early (before CORS/routes).
+  - `auditLogMiddleware` mounted after `authMiddleware` so the
+    principal is populated.
+  - Startup `logger.warn` when `corsOrigin === "*"` — draws attention to
+    the permissive default in production deploys.
+- **`docs/security.md`** — threat-model-lite, auth-provider matrix,
+  control-matrix table (per env flag), SIEM integration sketch
+  (`stderr` → fluent-bit → S3/Splunk filtered on `name == "audit"`),
+  documented follow-ups (SAML, mTLS, Redis-backed rate limiter).
+
+#### Observability (Slice 4)
+
+- **`packages/standard-interface/src/observability/telemetry.ts`** —
+  dependency-free Prometheus text exposition.
+  - Hand-rolled `Counter` and `Histogram` primitives (default histogram
+    buckets `0.005 … 10s`).
+  - Built-in metrics: `stem_agent_http_requests_total{method,route,status}`,
+    `stem_agent_http_request_duration_seconds`,
+    `stem_agent_http_errors_total`.
+  - `initMetrics(app, config)` mounts `/metrics` and the measurement
+    middleware when `METRICS_ENABLED=true`.
+  - `/metrics` added to `authMiddleware.publicPaths` so scrapers can reach
+    it without credentials.
+- **`docs/observability.md`** — logs / metrics / traces guide, sample
+  PromQL, example Grafana panel specs, and OpenTelemetry tracing wired as
+  a documented follow-up (kept out of the runtime to avoid a large
+  dependency bump in this release).
+
+#### Enterprise-operations example (Slice 5)
+
+- **`examples/08_enterprise_operations.py`** — the smoke test that
+  corresponds to every new control:
+  1. Authenticated request with `X-API-Key` and request-id correlation.
+  2. Reads and prints `X-Request-Id` from the response for SIEM pivots.
+  3. Probes an RBAC-gated endpoint (`POST /api/v1/admin/mcp/reload`) to
+     demonstrate 401 / 403 semantics with graceful degradation when auth
+     is off.
+  4. Scrapes `/metrics` and prints the Prometheus lines.
+- **`examples/stem_client.py`** — optional `api_key` and `bearer_token`
+  constructor arguments with `STEM_API_KEY` / `STEM_BEARER_TOKEN` env
+  fallbacks. New `metrics()` and `chat_with_meta()` helpers. Backward
+  compatible — existing examples untouched.
+
+#### Tests
+
+- **`packages/standard-interface/src/__tests__/authorize.test.ts`** — 5
+  cases covering `requirePermission` (401 no principal, 403 missing perm,
+  200 allow) and `requireAnyPermission` (allow / deny).
+- **`packages/standard-interface/src/__tests__/audit-log.test.ts`** — 3
+  cases: one event per request when enabled, `decision: deny` on 403,
+  no events when disabled. Uses an in-memory pino destination stream to
+  assert on emitted JSON lines.
+- **`packages/standard-interface/src/__tests__/security-headers.test.ts`**
+  — 3 cases: headers present when mounted, absent when not mounted,
+  overrides for CSP / HSTS / Referrer-Policy respected.
+
+### Changed
+
+- **`packages/standard-interface/src/gateway.ts`** — `GatewayConfig` gains
+  optional `securityHeaders`, `auditLog`, and `metrics` sections. All
+  default to disabled, so gateways constructed without the new fields
+  behave identically to 0.1.1.
+- **`docs/architecture.svg`** — reflects the new surface area:
+  - Gateway bar subtitle now lists `audit-log · RBAC ·
+    security-headers · /metrics`.
+  - New lime-green **Enterprise Ops (opt-in)** protocol box in Layer 2
+    with `RBAC · audit · CSP · /metrics`.
+  - Differentiation layer *Domains* box updated: `sre · finance ·
+    ai-research · healthcare · legal`.
+  - Deployment strip rewritten to reference `Dockerfile (multi-stage ·
+    non-root · tini)`, `docker-compose.prod.yml`, `deploy/k8s/`.
+  - Testing strip bumped to 48 files / 526 tests and now lists RBAC ·
+    Audit · Headers.
+  - Legend gains an *Enterprise Ops* swatch; arrow legend shifted right
+    to avoid overlap.
+  - Inner boxes in the **Memory & Learning** and **MCP Integration**
+    panels shifted down by 12px for breathing room under each section
+    header.
+
+### Fixed
+
+- **`docker-compose.yml` prod profile** — was broken in 0.1.0 and 0.1.1
+  because `dockerfile: Dockerfile` pointed to a file that did not exist.
+  The `docker compose --profile prod up` path is now functional.
+- **Dangling doc links** — `docs/getting_started.md` §6 referenced
+  `SECURITY_ADDITION.md` (never shipped). Both occurrences now point to
+  `docs/security.md`.
+- **README cross-links** — top-level README now links to the new
+  `docs/deployment.md`, `docs/security.md`, `docs/observability.md`, and
+  the `domains/` industry personas.
+
+### Documentation
+
+- `docs/deployment.md`, `docs/security.md`, `docs/observability.md` — new.
+- `docs/getting_started.md` — broken `SECURITY_ADDITION.md` link fixed;
+  enterprise-ops section cross-references the three new docs.
+- `env.example` — new opt-in envs documented with comments:
+  `SECURITY_HELMET`, `AUDIT_LOG_ENABLED`, `METRICS_ENABLED`, `LOG_REDACT`,
+  `STEM_API_KEY`, `STEM_BEARER_TOKEN`, plus placeholders for the
+  (follow-up) OTEL envs.
+- `examples/README.md` — new example 08 row + feature-coverage matrix
+  column.
+- `README.md` — new *Enterprise operations* section with a
+  concern → control → enable matrix.
+
+### Known limitations / still follow-up
+
+- **Redis-backed rate limiter.** In-memory store remains; documented in
+  `docs/deployment.md` under *Scaling caveats*. Deploying multiple
+  replicas without fronting Redis means per-replica limits.
+- **Distributed tracing.** `OTEL_ENABLED` placeholder is in `env.example`
+  but the SDK is not yet wired — skipped to avoid a heavy dependency bump
+  this release. Shape documented in `docs/observability.md`.
+- **No new auth providers.** SAML and mTLS remain enum-only despite the
+  `AuthMiddleware` contract admitting them. Tracked in `docs/security.md`
+  follow-ups.
+- **Pre-existing mcp-server test failures** remain unrelated: the
+  `.mcp.json` and `.claude/rules/*-domain.md` fixtures are still absent.
+  Confirmed failing identically on `main` before and after 0.1.2 by
+  `git stash && npm run test --workspace=@stem-agent/mcp-server`.
+
+### Test coverage after 0.1.2
+
+| Workspace                        | Files | Tests | Δ vs 0.1.1 |
+|----------------------------------|------:|------:|-----------:|
+| `@stem-agent/mcp-integration`    |     8 |    65 |          — |
+| `@stem-agent/memory-system`      |    11 |   153 |          — |
+| `@stem-agent/agent-core`         |     7 |    85 |          — |
+| `@stem-agent/standard-interface` |    14 |   113 |    +3 / +11 |
+| `@stem-agent/caller-layer`       |     4 |    43 |          — |
+| `@stem-agent/mcp-server`         | 3 of 4 |  76  | unchanged (pre-existing failure) |
+| **Total**                        | **47 of 48** | **535** | **+3 / +11** |
+
+Every new test is additive; the 0.1.1 suite passes untouched.
+
+### References
+
+- Slice plan: `/home/alfred/.claude/plans/dazzling-pondering-ladybug.md`.
+- New middleware entry points: `packages/standard-interface/src/auth/authorize.ts`,
+  `packages/standard-interface/src/middleware/security-headers.ts`,
+  `packages/standard-interface/src/middleware/audit-log.ts`,
+  `packages/standard-interface/src/observability/telemetry.ts`.
+- Env-flag catalogue: `env.example` (bottom half) and
+  `docs/security.md` control matrix.
+
+---
+
 ## [0.1.1] — 2026-04-26
 
 Patch release closing the P0 and P1 gaps from design review
@@ -168,5 +408,6 @@ Initial public cut of the stem-agent monorepo. Includes:
 - Four framework adapters: AutoGen, CrewAI, LangGraph, OpenAI Agents SDK.
 - `DomainPersona` type and `domains/{finance,sre}/` persona + skill definitions (defined but not wired — see 0.1.1).
 
+[0.1.2]: #012--2026-05-05
 [0.1.1]: #011--2026-04-26
 [0.1.0]: #010--2026-03-26-baseline

@@ -693,7 +693,7 @@ curl -X POST http://localhost:8080/api/v1/chat \
   -d '{"message": "Hello"}'
 ```
 
-Supported protocols: JWT, OAuth2, SAML, API Key, Bearer Token, mTLS (planned). See [SECURITY_ADDITION.md](SECURITY_ADDITION.md) for full configuration details.
+Supported protocols: JWT (HS256), OAuth2 (token introspection), API Key. SAML and mTLS are declared in the `AuthProtocol` enum but not yet implemented. See [security.md](security.md) for the control matrix, RBAC helpers, audit logging, and follow-up work.
 
 ---
 
@@ -873,6 +873,8 @@ docker compose logs stem-agent
 ## Next Steps
 
 - Read the full [Design Document](stem-agent-design.md) for deep architectural details
-- Review [Security Configuration](SECURITY_ADDITION.md) for enterprise auth setup
+- Review the [Security Guide](security.md) for the hardening control matrix, RBAC, and audit logging
+- Review the [Deployment Guide](deployment.md) for production topology, k8s manifests, and scaling caveats
+- Review the [Observability Guide](observability.md) for logs, metrics, and tracing roadmap
 - Explore the OpenAPI docs at `http://localhost:8080/docs` once the agent is running
 - Check individual package `PLAN.md` files under `packages/*/` for per-module design notes

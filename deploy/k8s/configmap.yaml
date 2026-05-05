@@ -1,0 +1,23 @@
+# Non-secret configuration. Secrets live in stem-agent-secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stem-agent-config
+data:
+  HOST: "0.0.0.0"
+  PORT: "8000"
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+
+  # LLM provider — see env.example.
+  LLM_PROVIDER: "amazon_bedrock"
+  AWS_REGION: "us-east-1"
+
+  # Opt-in hardening controls (see docs/security.md).
+  SECURITY_HELMET: "true"
+  AUDIT_LOG_ENABLED: "true"
+
+  # Opt-in observability (see docs/observability.md).
+  METRICS_ENABLED: "true"
+  OTEL_ENABLED: "false"
+  # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability:4318"

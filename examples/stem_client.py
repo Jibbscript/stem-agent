@@ -44,42 +44,59 @@ class StemAgentClient:
         caller_id: str | None = None,
         session_id: str | None = None,
         timeout: float = 120,
+        api_key: str | None = None,
+        bearer_token: str | None = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("STEM_AGENT_URL", "http://localhost:8000")).rstrip("/")
         self.caller_id = caller_id or os.getenv("STEM_CALLER_ID", "python-examples")
         self.session_id = session_id or str(uuid4())
         self.timeout = timeout
+        # Enterprise ops: API key / bearer token auth. If neither arg is
+        # provided, pick up from env (STEM_API_KEY / STEM_BEARER_TOKEN) so
+        # hardened deployments work out of the box with no code changes.
+        self.api_key = api_key or os.getenv("STEM_API_KEY")
+        self.bearer_token = bearer_token or os.getenv("STEM_BEARER_TOKEN")
+
+    @property
+    def _auth_headers(self) -> dict[str, str]:
+        """Authentication headers derived from constructor args / env."""
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        if self.bearer_token:
+            headers["Authorization"] = f"Bearer {self.bearer_token}"
+        return headers
 
     # -- Health & discovery ---------------------------------------------------
 
     def health(self) -> dict:
         """GET /api/v1/health"""
-        r = httpx.get(f"{self.base_url}/api/v1/health", timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/api/v1/health", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
     def agent_card(self) -> dict:
         """GET /.well-known/agent.json — A2A agent card."""
-        r = httpx.get(f"{self.base_url}/.well-known/agent.json", timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/.well-known/agent.json", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
     def list_tools(self) -> list[dict]:
         """GET /api/v1/mcp/tools — available MCP tools."""
-        r = httpx.get(f"{self.base_url}/api/v1/mcp/tools", timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/api/v1/mcp/tools", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
     def get_behavior(self) -> dict:
         """GET /api/v1/behavior — current behavior parameters."""
-        r = httpx.get(f"{self.base_url}/api/v1/behavior", timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/api/v1/behavior", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
     def get_profile(self, caller_id: str | None = None) -> dict:
         """GET /api/v1/profile/:id — caller profile."""
         cid = caller_id or self.caller_id
-        r = httpx.get(f"{self.base_url}/api/v1/profile/{cid}", timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/api/v1/profile/{cid}", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
@@ -102,7 +119,12 @@ class StemAgentClient:
         }
         if metadata:
             body["metadata"] = metadata
-        r = httpx.post(f"{self.base_url}/api/v1/chat", json=body, timeout=timeout or self.timeout)
+        r = httpx.post(
+            f"{self.base_url}/api/v1/chat",
+            json=body,
+            timeout=timeout or self.timeout,
+            headers=self._auth_headers,
+        )
         r.raise_for_status()
         return r.json()
 
@@ -118,7 +140,13 @@ class StemAgentClient:
             "callerId": caller_id or self.caller_id,
             "sessionId": self.session_id,
         }
-        with httpx.stream("POST", f"{self.base_url}/api/v1/chat/stream", json=body, timeout=self.timeout) as r:
+        with httpx.stream(
+            "POST",
+            f"{self.base_url}/api/v1/chat/stream",
+            json=body,
+            timeout=self.timeout,
+            headers=self._auth_headers,
+        ) as r:
             r.raise_for_status()
             for line in r.iter_lines():
                 if line.startswith("data: "):
@@ -135,13 +163,13 @@ class StemAgentClient:
     def create_task(self, message: str, **kwargs: Any) -> dict:
         """POST /api/v1/tasks — create async task."""
         body: dict[str, Any] = {"message": message, "callerId": self.caller_id, **kwargs}
-        r = httpx.post(f"{self.base_url}/api/v1/tasks", json=body, timeout=self.timeout)
+        r = httpx.post(f"{self.base_url}/api/v1/tasks", json=body, timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
     def get_task(self, task_id: str) -> dict:
         """GET /api/v1/tasks/:id"""
-        r = httpx.get(f"{self.base_url}/api/v1/tasks/{task_id}", timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/api/v1/tasks/{task_id}", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
@@ -150,15 +178,45 @@ class StemAgentClient:
         params: dict[str, Any] = {"limit": limit}
         if status:
             params["status"] = status
-        r = httpx.get(f"{self.base_url}/api/v1/tasks", params=params, timeout=self.timeout)
+        r = httpx.get(f"{self.base_url}/api/v1/tasks", params=params, timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
     def cancel_task(self, task_id: str) -> dict:
         """POST /api/v1/tasks/:id/cancel"""
-        r = httpx.post(f"{self.base_url}/api/v1/tasks/{task_id}/cancel", timeout=self.timeout)
+        r = httpx.post(f"{self.base_url}/api/v1/tasks/{task_id}/cancel", timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
+
+    # -- Enterprise ops ------------------------------------------------------
+
+    def metrics(self) -> str:
+        """GET /metrics — Prometheus text exposition (requires METRICS_ENABLED=true)."""
+        r = httpx.get(f"{self.base_url}/metrics", timeout=self.timeout, headers=self._auth_headers)
+        r.raise_for_status()
+        return r.text
+
+    def chat_with_meta(
+        self,
+        message: str,
+        *,
+        caller_id: str | None = None,
+        session_id: str | None = None,
+    ) -> tuple[dict, dict[str, str]]:
+        """Like chat() but also returns response headers (X-Request-Id, etc.)."""
+        body: dict[str, Any] = {
+            "message": message,
+            "callerId": caller_id or self.caller_id,
+            "sessionId": session_id or self.session_id,
+        }
+        r = httpx.post(
+            f"{self.base_url}/api/v1/chat",
+            json=body,
+            timeout=self.timeout,
+            headers=self._auth_headers,
+        )
+        r.raise_for_status()
+        return r.json(), dict(r.headers)
 
     # -- A2A protocol --------------------------------------------------------
 
@@ -170,7 +228,7 @@ class StemAgentClient:
             "method": method,
             "params": params,
         }
-        r = httpx.post(f"{self.base_url}/a2a", json=body, timeout=self.timeout)
+        r = httpx.post(f"{self.base_url}/a2a", json=body, timeout=self.timeout, headers=self._auth_headers)
         r.raise_for_status()
         return r.json()
 
@@ -192,7 +250,7 @@ class StemAgentClient:
         }
         if metadata:
             body["metadata"] = metadata
-        async with httpx.AsyncClient(timeout=self.timeout) as c:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as c:
             r = await c.post(f"{self.base_url}/api/v1/chat", json=body)
             r.raise_for_status()
             return r.json()
@@ -200,14 +258,14 @@ class StemAgentClient:
     async def acreate_task(self, message: str, **kwargs: Any) -> dict:
         """Async version of create_task()."""
         body: dict[str, Any] = {"message": message, "callerId": self.caller_id, **kwargs}
-        async with httpx.AsyncClient(timeout=self.timeout) as c:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as c:
             r = await c.post(f"{self.base_url}/api/v1/tasks", json=body)
             r.raise_for_status()
             return r.json()
 
     async def aget_task(self, task_id: str) -> dict:
         """Async version of get_task()."""
-        async with httpx.AsyncClient(timeout=self.timeout) as c:
+        async with httpx.AsyncClient(timeout=self.timeout, headers=self._auth_headers) as c:
             r = await c.get(f"{self.base_url}/api/v1/tasks/{task_id}")
             r.raise_for_status()
             return r.json()

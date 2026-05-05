@@ -1,0 +1,61 @@
+# Production overlay.
+#
+# Apply on top of the base compose file for environments where postgres and
+# redis are managed externally (RDS, ElastiCache, etc.):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d stem-agent
+#
+# Required secrets should come from a real secret manager. This file reads
+# them from the environment (or a .env file outside VCS); rotate regularly.
+#
+# Note: the base docker-compose.yml also starts local postgres/redis. In prod
+# you typically want to run *only* the stem-agent service from this overlay:
+#
+#   docker compose -f docker-compose.prod.yml up -d stem-agent
+#
+# (i.e. omit the base file entirely and let managed services live outside compose).
+
+services:
+  stem-agent:
+    image: "${STEM_AGENT_IMAGE:-stem-agent:latest}"
+    # In prod the image is built once in CI and pulled here — no `build:`.
+    ports:
+      - "${STEM_AGENT_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?set DATABASE_URL to a managed postgres connection string}"
+      REDIS_URL: "${REDIS_URL:?set REDIS_URL to a managed redis connection string}"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      NODE_ENV: "production"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+
+      # Opt-in hardening — see docs/security.md.
+      SECURITY_HELMET: "${SECURITY_HELMET:-true}"
+      AUDIT_LOG_ENABLED: "${AUDIT_LOG_ENABLED:-true}"
+
+      # Opt-in observability — see docs/observability.md.
+      METRICS_ENABLED: "${METRICS_ENABLED:-true}"
+      OTEL_ENABLED: "${OTEL_ENABLED:-false}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+
+      # LLM provider (see env.example).
+      LLM_PROVIDER: "${LLM_PROVIDER:-amazon_bedrock}"
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    # A single replica by default. The rate limiter is in-memory, so scaling
+    # horizontally requires pinning clients to a replica or replacing the
+    # limiter with a Redis-backed one (see docs/deployment.md §Scaling).
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 256M

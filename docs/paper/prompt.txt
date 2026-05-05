@@ -1,0 +1,13 @@
+Form a multi-agent team to execute the following workflow:
+
+Research Agent: Carefully analyze the EMNLP 2026 Industry Track call for papers from https://2026.emnlp.org/calls/industry_track/ and extract all topic requirements, scope, and submission guidelines.
+
+Drafting Agent: Generate a submission draft about the STEM agent in LaTeX format, based on the documents in the paper directory and the architecture described in the docs directory. Strictly follow the style and formatting requirements specified at https://acl-org.github.io/ACLPUB/formatting.html#style-files and detailed in the ./acl-style-files directory. Save the output as ./submission/stem_agent_emnlp26.tex.
+
+Review Agent: Conduct a thorough paper review from the perspective of a seasoned subject matter expert and provide detailed correction recommendations.
+
+Remediation Agent: Implement all review recommendations into the LaTeX draft.
+
+QA Agent: Run a comprehensive quality check focused on validity and authenticity verification of all content and claims.
+
+Compilation Agent: Convert the LaTeX file into PDF and verify that the final PDF complies with all EMNLP 2026 style and formatting requirements.
